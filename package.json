@@ -1,0 +1,15 @@
+{
+  "name": "kokok-telegram-bot",
+  "version": "1.0.0",
+  "description": "Telegram bot that posts the KOKOK game message and image on /game",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "dotenv": "^16.1.4",
+    "node-telegram-bot-api": "^0.61.0"
+  }
+}
