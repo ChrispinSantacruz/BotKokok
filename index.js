@@ -13,7 +13,66 @@ if (!TOKEN) {
 
 const bot = new TelegramBot(TOKEN, { polling: true });
 
+const { MongoClient } = require('mongodb');
+
+const MONGODB_URI = process.env.MONGODB_URI;
+const MONGODB_DBNAME = process.env.MONGODB_DBNAME || 'botdb';
+
 const imagePath = path.join(__dirname, 'bot.jpg');
+
+let mongoClient;
+let mongoDb;
+
+async function connectToMongo() {
+  if (!MONGODB_URI) {
+    console.warn('MONGODB_URI not set, skipping MongoDB connection.');
+    return;
+  }
+
+  try {
+  mongoClient = new MongoClient(MONGODB_URI);
+    await mongoClient.connect();
+    mongoDb = mongoClient.db(MONGODB_DBNAME);
+    console.log('Connected to MongoDB:', MONGODB_DBNAME);
+
+    // Ensure heartbeat document exists
+    const col = mongoDb.collection('bot_meta');
+    await col.updateOne(
+      { _id: 'bot_heartbeat' },
+      { $set: { startedAt: new Date(), lastSeen: new Date(), bot: 'BotKokok' } },
+      { upsert: true }
+    );
+  } catch (err) {
+    console.error('Failed to connect to MongoDB:', err);
+    // keep running even if Mongo connection fails
+  }
+}
+
+async function updateHeartbeat() {
+  if (!mongoDb) return;
+  try {
+    const col = mongoDb.collection('bot_meta');
+    await col.updateOne(
+      { _id: 'bot_heartbeat' },
+      { $set: { lastSeen: new Date() }, $inc: { ticks: 1 } },
+      { upsert: true }
+    );
+    console.log('Heartbeat updated at', new Date().toISOString());
+  } catch (err) {
+    console.error('Heartbeat update failed:', err);
+  }
+}
+
+async function closeMongo() {
+  try {
+    if (mongoClient) {
+      await mongoClient.close();
+      console.log('MongoDB connection closed.');
+    }
+  } catch (err) {
+    console.error('Error closing MongoDB connection:', err);
+  }
+}
 
 const messageText = `🪳 Welcome to KOKOK THE ROACH! 🪳
 
@@ -91,3 +150,24 @@ bot.on('polling_error', (err) => {
 });
 
 console.log('Bot started. Listening for /game commands...');
+
+// Start Mongo connection and heartbeat
+(async () => {
+  await connectToMongo();
+
+  // update heartbeat immediately then every 5 minutes
+  await updateHeartbeat();
+  const HEARTBEAT_INTERVAL = 5 * 60 * 1000; // 5 minutes
+  const heartbeatTimer = setInterval(updateHeartbeat, HEARTBEAT_INTERVAL);
+
+  // Graceful shutdown
+  const shutdown = async (signal) => {
+    console.log('Received', signal, 'shutting down...');
+    clearInterval(heartbeatTimer);
+    await closeMongo();
+    process.exit(0);
+  };
+
+  process.on('SIGINT', () => shutdown('SIGINT'));
+  process.on('SIGTERM', () => shutdown('SIGTERM'));
+})();
