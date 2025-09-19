@@ -22,6 +22,7 @@ const imagePath = path.join(__dirname, 'bot.jpg');
 
 let mongoClient;
 let mongoDb;
+let httpServer;
 
 async function connectToMongo() {
   if (!MONGODB_URI) {
@@ -160,10 +161,35 @@ console.log('Bot started. Listening for /game commands...');
   const HEARTBEAT_INTERVAL = 5 * 60 * 1000; // 5 minutes
   const heartbeatTimer = setInterval(updateHeartbeat, HEARTBEAT_INTERVAL);
 
+  // Minimal HTTP server so Render sees an open port
+  const PORT = process.env.PORT || 3000;
+  const http = require('http');
+  httpServer = http.createServer((req, res) => {
+    if (req.url === '/health') {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ status: 'ok', time: new Date().toISOString() }));
+    } else {
+      res.writeHead(200, { 'Content-Type': 'text/plain' });
+      res.end('BotKokok running');
+    }
+  });
+
+  httpServer.listen(PORT, () => {
+    console.log('HTTP server listening on port', PORT);
+  });
+
   // Graceful shutdown
   const shutdown = async (signal) => {
     console.log('Received', signal, 'shutting down...');
     clearInterval(heartbeatTimer);
+    if (httpServer) {
+      try {
+        await new Promise((resolve, reject) => httpServer.close((err) => (err ? reject(err) : resolve())));
+        console.log('HTTP server closed.');
+      } catch (err) {
+        console.error('Error closing HTTP server:', err);
+      }
+    }
     await closeMongo();
     process.exit(0);
   };
